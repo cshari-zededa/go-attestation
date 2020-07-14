@@ -17,7 +17,6 @@ package attest
 import (
 	"bytes"
 	"crypto"
-	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/binary"
@@ -250,51 +249,6 @@ type rawPCRComposite struct {
 	Size    uint16 // always 3
 	PCRMask [3]byte
 	Values  tpmutil.U32Bytes
-}
-
-func (a *AKPublic) validate12Quote(quote Quote, pcrs []PCR, nonce []byte) error {
-	pub, ok := a.Public.(*rsa.PublicKey)
-	if !ok {
-		return fmt.Errorf("unsupported public key type: %T", a.Public)
-	}
-	qHash := sha1.Sum(quote.Quote)
-	if err := rsa.VerifyPKCS1v15(pub, crypto.SHA1, qHash[:], quote.Signature); err != nil {
-		return fmt.Errorf("invalid quote signature: %v", err)
-	}
-
-	var att rawAttestationData
-	if _, err := tpmutil.Unpack(quote.Quote, &att); err != nil {
-		return fmt.Errorf("parsing quote: %v", err)
-	}
-	// TODO(ericchiang): validate Version field.
-	if att.Nonce != sha1.Sum(nonce) {
-		return fmt.Errorf("invalid nonce")
-	}
-	if att.Fixed != fixedQuote {
-		return fmt.Errorf("quote wasn't a QUOT object: %x", att.Fixed)
-	}
-
-	// See 5.4.1 Creating a PCR composite hash
-	sort.Slice(pcrs, func(i, j int) bool { return pcrs[i].Index < pcrs[j].Index })
-	var (
-		pcrMask [3]byte // bitmap indicating which PCRs are active
-		values  []byte  // appended values of all PCRs
-	)
-	for _, pcr := range pcrs {
-		if pcr.Index < 0 || pcr.Index >= 24 {
-			return fmt.Errorf("invalid PCR index: %d", pcr.Index)
-		}
-		pcrMask[pcr.Index/8] |= 1 << uint(pcr.Index%8)
-		values = append(values, pcr.Digest...)
-	}
-	composite, err := tpmutil.Pack(rawPCRComposite{3, pcrMask, values})
-	if err != nil {
-		return fmt.Errorf("marshaling PCRs: %v", err)
-	}
-	if att.Digest != sha1.Sum(composite) {
-		return fmt.Errorf("PCRs passed didn't match quote: %v", err)
-	}
-	return nil
 }
 
 func extend(pcr PCR, replay []byte, e rawEvent, locality byte) (pcrDigest []byte, eventDigest []byte, err error) {
