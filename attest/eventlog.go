@@ -231,63 +231,6 @@ func (a *AKPublic) validate12Quote(quote Quote, pcrs []PCR, nonce []byte) error 
 	return nil
 }
 
-func (a *AKPublic) validate20Quote(quote Quote, pcrs []PCR, nonce []byte) error {
-	sig, err := tpm2.DecodeSignature(bytes.NewBuffer(quote.Signature))
-	if err != nil {
-		return fmt.Errorf("parse quote signature: %v", err)
-	}
-
-	sigHash := a.Hash.New()
-	sigHash.Write(quote.Quote)
-
-	switch pub := a.Public.(type) {
-	case *rsa.PublicKey:
-		if sig.RSA == nil {
-			return fmt.Errorf("rsa public key provided for ec signature")
-		}
-		sigBytes := []byte(sig.RSA.Signature)
-		if err := rsa.VerifyPKCS1v15(pub, a.Hash, sigHash.Sum(nil), sigBytes); err != nil {
-			return fmt.Errorf("invalid quote signature: %v", err)
-		}
-	default:
-		// TODO(ericchiang): support ecdsa
-		return fmt.Errorf("unsupported public key type %T", pub)
-	}
-
-	att, err := tpm2.DecodeAttestationData(quote.Quote)
-	if err != nil {
-		return fmt.Errorf("parsing quote signature: %v", err)
-	}
-	if att.Type != tpm2.TagAttestQuote {
-		return fmt.Errorf("attestation isn't a quote, tag of type 0x%x", att.Type)
-	}
-	if !bytes.Equal([]byte(att.ExtraData), nonce) {
-		return fmt.Errorf("nonce didn't match: %v", err)
-	}
-
-	pcrByIndex := map[int][]byte{}
-	pcrDigestAlg := HashAlg(att.AttestedQuoteInfo.PCRSelection.Hash).cryptoHash()
-	for _, pcr := range pcrs {
-		if pcr.DigestAlg == pcrDigestAlg {
-			pcrByIndex[pcr.Index] = pcr.Digest
-		}
-	}
-
-	sigHash.Reset()
-	for _, index := range att.AttestedQuoteInfo.PCRSelection.PCRs {
-		digest, ok := pcrByIndex[index]
-		if !ok {
-			return fmt.Errorf("quote was over PCR %d which wasn't provided", index)
-		}
-		sigHash.Write(digest)
-	}
-
-	if !bytes.Equal(sigHash.Sum(nil), att.AttestedQuoteInfo.PCRDigest) {
-		return fmt.Errorf("quote digest didn't match pcrs provided")
-	}
-	return nil
-}
-
 func extend(pcr PCR, replay []byte, e rawEvent, locality byte) (pcrDigest []byte, eventDigest []byte, err error) {
 	h := pcr.DigestAlg
 
