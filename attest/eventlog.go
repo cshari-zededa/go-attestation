@@ -34,6 +34,72 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 )
 
+// TPMVersion is used to configure a preference in
+// which TPM to use, if multiple are available.
+type TPMVersion uint8
+
+// TPM versions
+const (
+        TPMVersionAgnostic TPMVersion = iota
+        TPMVersion12
+        TPMVersion20
+)
+
+// HashAlg identifies a hashing Algorithm.
+type HashAlg uint8
+
+// Valid hash algorithms.
+var (
+	HashSHA1   = HashAlg(tpm2.AlgSHA1)
+	HashSHA256 = HashAlg(tpm2.AlgSHA256)
+)
+
+func (a HashAlg) cryptoHash() crypto.Hash {
+	switch a {
+	case HashSHA1:
+		return crypto.SHA1
+	case HashSHA256:
+		return crypto.SHA256
+	}
+	return 0
+}
+
+func (a HashAlg) goTPMAlg() tpm2.Algorithm {
+	switch a {
+	case HashSHA1:
+		return tpm2.AlgSHA1
+	case HashSHA256:
+		return tpm2.AlgSHA256
+	}
+	return 0
+}
+
+// String returns a human-friendly representation of the hash algorithm.
+func (a HashAlg) String() string {
+	switch a {
+	case HashSHA1:
+		return "SHA1"
+	case HashSHA256:
+		return "SHA256"
+	}
+	return fmt.Sprintf("HashAlg<%d>", int(a))
+}
+
+// Quote encapsulates the results of a Quote operation against the TPM,
+// using an attestation key.
+type Quote struct {
+        Version   TPMVersion
+        Quote     []byte
+        Signature []byte
+}
+
+// PCR encapsulates the value of a PCR at a point in time.
+type PCR struct {
+        Index     int
+        Digest    []byte
+        DigestAlg crypto.Hash
+}
+
 // ReplayError describes the parsed events that failed to verify against
 // a particular PCR.
 type ReplayError struct {
